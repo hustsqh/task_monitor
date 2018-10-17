@@ -19,5 +19,9 @@ struct taskConfig_t{
     struct list_head list;
 };
 
+void foreach_task(void (*cb)(taskParm_t *, void *), void *data);
+int task_config_init(const char *filename);
+
+
 
 #endif

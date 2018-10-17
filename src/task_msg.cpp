@@ -153,7 +153,7 @@ event_err_code_e MsgServer::processHeartbeatReq(uint32_t reqId, cJSON *data, cha
         return EVENT_ERROR_UNPROCESS;
     }
 
-    ret = mEventCb[EVENT_TYPE_HEARTBEAT](&hbreq, &rsp, &rspLen);
+    ret = mEventCb[EVENT_TYPE_HEARTBEAT](&hbreq, &rsp, &rspLen, mUserData[EVENT_TYPE_HEARTBEAT]);
     if(ret != EVENT_SUCC){
         loge("event cb heartbeat return %d", ret);
         return ret;
@@ -166,19 +166,21 @@ event_err_code_e MsgServer::processHeartbeatReq(uint32_t reqId, cJSON *data, cha
 
     root = cJSON_CreateObject();
     if(!root){
+        free(rsp);
         return EVENT_ERROR_MEM;
     }
     dataJsonReply = cJSON_CreateObject();
     if(!dataJsonReply){
         cJSON_Delete(root);
+        free(rsp);
         return EVENT_ERROR_MEM;
     }
 
     cJSON_AddNumberToObject(root, "ret", 0);
     cJSON_AddItemToObject(root, "data", dataJsonReply);
-    cJSON_AddNumberToObject(dataJsonReply, "pid", hbreq.pid);
-    cJSON_AddNumberToObject(dataJsonReply, "heartbeat", hbreq.heartbeat);
-
+    cJSON_AddNumberToObject(dataJsonReply, "pid", rsp->pid);
+    cJSON_AddNumberToObject(dataJsonReply, "heartbeat", rsp->heatbeat);
+    free(rsp);
     rspJson = cJSON_PrintUnformatted(root);
     if(!rspJson){
         cJSON_Delete(root);
@@ -208,7 +210,7 @@ event_err_code_e MsgServer::processQueryAllReq(uint32_t reqId, cJSON *data, char
         return EVENT_ERROR_UNPROCESS;
     }
 
-    ret = mEventCb[EVENT_TYPE_QUERY_ALL](NULL, &rspData, &rspLen);
+    ret = mEventCb[EVENT_TYPE_QUERY_ALL](NULL, &rspData, &rspLen, mUserData[EVENT_TYPE_QUERY_ALL]);
     if(ret != EVENT_SUCC){
         loge("event cb heartbeat return %d", ret);
         return ret;
@@ -221,11 +223,13 @@ event_err_code_e MsgServer::processQueryAllReq(uint32_t reqId, cJSON *data, char
 
     root = cJSON_CreateObject();
     if(!root){
+        free(rspData);
         return EVENT_ERROR_MEM;
     }
     dataJsonReply = cJSON_CreateArray();
     if(!dataJsonReply){
         cJSON_Delete(root);
+        free(rspData);
         return EVENT_ERROR_MEM;
     }
 
@@ -236,6 +240,7 @@ event_err_code_e MsgServer::processQueryAllReq(uint32_t reqId, cJSON *data, char
         cJSON *item = cJSON_CreateObject();
         if(!item){
             cJSON_Delete(root);
+            free(rspData);
             return EVENT_ERROR_MEM;
         }
         simpleInfo = rspData->taskList[i];
@@ -244,6 +249,7 @@ event_err_code_e MsgServer::processQueryAllReq(uint32_t reqId, cJSON *data, char
         cJSON_AddStringToObject(item, "status", simpleInfo->status);
         cJSON_AddItemToArray(dataJsonReply, item);
     }
+    free(rspData);
 
     rspJson = cJSON_PrintUnformatted(root);
     if(!rspJson){
@@ -301,7 +307,7 @@ event_err_code_e MsgServer::processQuerySingleTaskReq(uint32_t reqId, cJSON *dat
         return EVENT_ERROR_UNPROCESS;
     }
 
-    ret = mEventCb[EVENT_TYPE_QUERY_TASK](&tsReq, &rspData, &rspLen);
+    ret = mEventCb[EVENT_TYPE_QUERY_TASK](&tsReq, &rspData, &rspLen, mUserData[EVENT_TYPE_QUERY_ALL]);
     if(ret != EVENT_SUCC){
         loge("event cb EVENT_TYPE_QUERY_TASK return %d", ret);
         return ret;
@@ -314,11 +320,13 @@ event_err_code_e MsgServer::processQuerySingleTaskReq(uint32_t reqId, cJSON *dat
 
     root = cJSON_CreateObject();
     if(!root){
+        free(rspData);
         return EVENT_ERROR_MEM;
     }
     dataJsonReply = cJSON_CreateObject();
     if(!dataJsonReply){
         cJSON_Delete(root);
+        free(rspData);
         return EVENT_ERROR_MEM;
     }
 
@@ -330,6 +338,8 @@ event_err_code_e MsgServer::processQuerySingleTaskReq(uint32_t reqId, cJSON *dat
     cJSON_AddStringToObject(dataJsonReply, "param", rspData->param);
     cJSON_AddStringToObject(dataJsonReply, "status", rspData->status);
     cJSON_AddNumberToObject(dataJsonReply, "heartbeat", rspData->heartbeat);
+
+    free(rspData);
 
     rspJson = cJSON_PrintUnformatted(root);
     if(!rspJson){
@@ -378,7 +388,7 @@ event_err_code_e MsgServer::processTaskActionReq(uint32_t reqId, cJSON *data, ch
         return EVENT_ERROR_UNPROCESS;
     }
 
-    ret = mEventCb[EVENT_TYPE_TASK_ACTION](&taReq, NULL, NULL);
+    ret = mEventCb[EVENT_TYPE_TASK_ACTION](&taReq, NULL, NULL, mUserData[EVENT_TYPE_QUERY_ALL]);
     if(ret != EVENT_SUCC){
         loge("event cb TaskActionReq return %d", ret);
         return ret;
@@ -509,7 +519,7 @@ MsgServer::~MsgServer()
     memset(mEventCb, 0, sizeof(mEventCb));
 }
 
-int MsgServer::registerEventCb(event_type_e type, processEventCb cb)
+int MsgServer::registerEventCb(event_type_e type, processEventCb cb, void *usrData)
 {
     if(type >= EVENT_TYPE_MAX){
         return -1;
@@ -519,6 +529,7 @@ int MsgServer::registerEventCb(event_type_e type, processEventCb cb)
     }
 
     mEventCb[type] = cb;
+    mUserData[type] = usrData;
 
     return 0;
 }
@@ -558,7 +569,7 @@ uint32_t MsgClient::getNextReqId()
     return ++mCurReqId;
 }
 
-msgRequest_t * MsgClient::reqNodeCreate(uint32_t reqId, event_type_e type, double timeout)
+msgRequest_t * MsgClient::reqNodeCreate(uint32_t reqId, void *cb, event_type_e type, double timeout)
 {
     msgRequest_t *req = NULL;
 
@@ -617,7 +628,7 @@ int MsgClient::sendRequest(event_type_e reqType, char *data, uint32_t len, void 
         return ret;
     }
 
-    req = reqNodeCreate(reqId, reqType, timeout);
+    req = reqNodeCreate(reqId, cb, reqType, timeout);
     if(req){
         libev_api_start_timer(req->timer);
         list_add(&req->node, mRequestList);
@@ -982,7 +993,7 @@ int MsgClient::sendReqQueryAllTask(void (*cb)(int ret, taskAllRsp_t *rsp))
     return ret;
 }
 
-int MsgClient::sendReqQuerySingleTask(void (*cb)(int ret, taskDetailInfo_t *rsp))
+int MsgClient::sendReqQuerySingleTask(int pid, char *name, void (*cb)(int ret, taskDetailInfo_t *rsp))
 {
     cJSON *root = NULL;
     cJSON *data = NULL;
@@ -1006,6 +1017,9 @@ int MsgClient::sendReqQuerySingleTask(void (*cb)(int ret, taskDetailInfo_t *rsp)
     cJSON_AddItemToObject(root, "data", data);
     
     cJSON_AddNumberToObject(data, "pid", pid);
+    if(name){
+        cJSON_AddStringToObject(data, "name", name);
+    }
     
     json = cJSON_PrintUnformatted(root);
     if(!json){

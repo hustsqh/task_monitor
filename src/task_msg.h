@@ -5,6 +5,7 @@
 #include "ring_buf.h"
 
 enum taskActionType_e{
+    TASK_ACTION_NONE,
     TASK_ACTION_START,
     TASK_ACTION_STOP,
     TASK_ACTION_RESTART,
@@ -29,10 +30,11 @@ enum event_err_code_e{
     EVENT_ERROR_PARSE,
     EVENT_ERROR_MEM,
     EVENT_ERROR_UNPROCESS,
+    EVENT_ERROR_NOT_FOUND,
     EVENT_ERROR_MAX,
 };
 
-typedef event_err_code_e (*processEventCb)(void *data, void **reply, size_t *replySize);
+typedef event_err_code_e (*processEventCb)(void *data, void **reply, size_t *replySize, void *usrData);
 
 struct heartbeatReq_t{
     uint32_t pid;
@@ -71,8 +73,12 @@ struct taskDetailInfo_t{
     double heartbeat;
 };
 
+/**
+ * 优先使用pid查找任务，如果pid为空，则使用name查询
+ */
 struct taskActoinReq_t{
     uint32_t pid;
+    char name[32];
     taskActionType_e action;
 };
 
@@ -94,6 +100,7 @@ class MsgServer{
         ring_buf_t *mRb;
         int mClientFd;
         processEventCb mEventCb[EVENT_TYPE_MAX];
+        void *mUserData[EVENT_TYPE_MAX];
 
         int createFailMsg(uint32_t errcode, char **replyData, uint32_t *replySize);
         event_err_code_e processHeartbeatReq(uint32_t reqId, cJSON *data, char **replyData, uint32_t *replySize);
@@ -138,7 +145,7 @@ class MsgClient{
         int recvData(char *data, size_t len); 
         int sendReqHearbeat(pid_t pid, double heartbeat, void (*cb)(int ret, heartbeatRsp_t *rsp));
         int sendReqQueryAllTask(void (*cb)(int ret, taskAllRsp_t *rsp));
-        int sendReqQuerySingleTask(void (*cb)(int ret, taskDetailInfo_t *rsp));
+        int sendReqQuerySingleTask(int pid, char *name, void (*cb)(int ret, taskDetailInfo_t *rsp));
         int sendReqTaskAction(taskActionType_e action, void (*cb)(int ret, void *data));
 };
 

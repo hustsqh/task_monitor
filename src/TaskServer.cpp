@@ -41,8 +41,7 @@ static void serverReadIoCb(ev_io_id io, void *data)
     }
 
     pid = cred.pid;
-    // TODO: 
-
+    recv_client_connect(libev_api_watchio_get_inst(io), pid, fd);
     return;
 }
 

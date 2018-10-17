@@ -39,17 +39,23 @@ static void client_readio_cb(ev_io_id io, void *data)
     }
 
     memset(s_global_buf, 0, GLOBAL_BUF_LEN);
-    len = readSocket(fd, s_global_buf, GLOBAL_BUF_LEN);
-    if(len < 0){
-        loge("read socket error! %s", strerror(errno));
-        libev_api_send_event_delay(s_inst, connect_server_event_cb, NULL, NULL, 1);
-    }else if(len == 0){
-        loge("socket closed by server!");
-        libev_api_send_event_delay(s_inst, connect_server_event_cb, NULL, NULL, 1);
-    }else{
-        ret = client->recvData(s_global_buf, len);
-        if(ret){
-            loge("process data failed!");
+    while(1){
+        len = readSocket(fd, s_global_buf, GLOBAL_BUF_LEN);
+        if(len > 0){
+            ret = client->recvData(s_global_buf, len);
+            if(ret){
+                loge("process data failed!");
+                libev_api_send_event_delay(s_inst, connect_server_event_cb, NULL, NULL, 1);
+            }
+            break;
+        }else if(len == 0){
+            loge("socket closed by server!");
+            libev_api_send_event_delay(s_inst, connect_server_event_cb, NULL, NULL, 1);
+            break;
+        }else if(len < 0 && errno == EINTR){
+            continue;
+        }else{
+            loge("read socket error! %s", strerror(errno));
             libev_api_send_event_delay(s_inst, connect_server_event_cb, NULL, NULL, 1);
         }
     }

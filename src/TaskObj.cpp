@@ -5,10 +5,9 @@
 #include <errno.h>
 #include <fcntl.h>
 
-
+#include "task_msg.h"
 #include "task_debug.h"
-
-
+#include "task_core.h"
 
 static void TaskTimeoutCb(ev_timer_id timer, void *data)
 {
@@ -23,40 +22,16 @@ static void TaskTimeoutCb(ev_timer_id timer, void *data)
     task->restartTask();
 }
 
-static void taskReadIoCb(ev_io_id io, void *data)
-{
-    TaskObj *task = (TaskObj *)data;
-
-    if(!task){
-        return;
-    }
-
-    logw("task %s read data", task->mName);
-
-    // TODO:
-
-    return;
-}
-
-
 
 void TaskObj::clearTask()
 {
+    stopTaskClient();
     if(mStatus != TASK_STATUS_U){
         stopTask();
     }
 
     if(mTimer != NULL){
         libev_api_destroy_timer(&mTimer);
-    }
-
-    if(mReadIo){
-        libev_api_watchio_destroy(&mReadIo);
-    }
-
-    if(mClientFd > 0){
-        close(mClientFd);
-        mClientFd = -1;
     }
 
     mInst = NULL;
@@ -66,11 +41,12 @@ void TaskObj::clearTask()
     mHeartbeat = 0;
 }
 
+void TaskObj::refreshHeartBeat()
+{
+    libev_api_restart_timer(mTimer);
+}
 
-
-
-
-TaskObj::TaskObj(ev_inst_st *inst, std::string name, std::string path, std::string param, uint32_t heartbeat)
+TaskObj::TaskObj(ev_inst_st inst, std::string name, std::string path, std::string param, uint32_t heartbeat)
 {
     mInst = inst;
     mName = name;
@@ -89,7 +65,7 @@ TaskObj::TaskObj(ev_inst_st *inst, std::string name, std::string path, std::stri
     return;
 ERROR:
     clearTask();
-    throw exception("create task failed!");           
+    throw exception("create task failed!");
 }
 
 TaskObj::~TaskObj()
@@ -163,33 +139,60 @@ int TaskObj::restartTask()
 
 int TaskObj::startTaskClient(int fd)
 {
-    int ret = 0;
-    
     stopTaskClient();
-
-    fcntl(fd,F_SETFL,fcntl(fd,F_GETFL)|O_NONBLOCK);
-    ret = libev_api_watchio_create(mInst, fd, LIBEV_IO_READ, taskReadIoCb, this);
-    if(ret){
-        loge("create watch io failed!");
-        return ret;
+    
+    if(mClient != NULL){
+        delete mClient;
+        mClient = NULL;
     }
-    mClientFd = fd;
+
+    mClient = new TaskObjClient(mInst, fd, mPid);
+    if(!mClient){
+        return -1;
+    }
 
     return 0;
 }
 
 int TaskObj::stopTaskClient()
 {
-    if(mReadIo){
-        libev_api_watchio_destroy(mReadIo);
-    }
-    
-    if(mClientFd > 0){
-        close(mClientFd);
-        mClientFd = -1;
+    if(mClient != NULL){
+        delete mClient;
+        mClient = NULL;
     }
 
     return 0;
 }
+
+std::string TaskObj::getTaskName()
+{
+    return mName;
+}
+
+pid_t TaskObj::getTaskPid()
+{
+    return mPid;
+}
+
+double TaskObj::getTaskHeartbeat()
+{
+    return mHeartbeat;
+}
+
+task_status_e TaskObj::getTaskStatus()
+{
+    return mStatus;
+}
+
+std::string TaskObj::getTaskParam()
+{
+    return mParam;
+}
+
+std::string TaskObj::getTaskPath()
+{
+    return mPath;
+}
+
 
 
